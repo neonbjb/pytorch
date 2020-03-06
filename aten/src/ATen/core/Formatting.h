@@ -15,6 +15,9 @@ CAFFE2_API std::ostream& print(
     std::ostream& stream,
     const Tensor& tensor,
     int64_t linesize);
+
+CAFFE2_API std::string sprint(const Tensor & t);
+
 static inline std::ostream& operator<<(std::ostream & out, const Tensor & t) {
   return print(out,t,80);
 }

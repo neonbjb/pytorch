@@ -20,6 +20,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <queue>
 
 namespace torch { namespace autograd {
 
@@ -303,6 +304,22 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
 
   // Customization Points for Subclasses
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  virtual std::vector<Variable> get_saved_variables() {
+    return std::vector<Variable>();
+  }
+
+  // These functions deal with serializing and de-serializing the state data that most nodes contain.
+  virtual bool can_serialize_variables() {
+    return false;
+  }
+
+  virtual std::queue<uint8_t*> serialize_variables() {
+    return std::queue<uint8_t*>();
+  }
+
+  virtual void deserialize_variables(std::queue<uint8_t*> load_queue) {
+  }
 
   /// Releases saved variables if the operation won't be reused.
   virtual void release_variables() {}

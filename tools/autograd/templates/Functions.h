@@ -12,6 +12,8 @@
 #include "torch/csrc/autograd/saved_variable.h"
 #include <torch/csrc/WindowsTorchApiMacro.h>
 
+#include <queue>
+
 namespace torch { namespace autograd { namespace generated {
 
 using at::Scalar;

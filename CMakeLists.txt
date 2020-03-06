@@ -684,3 +684,11 @@ endif()
 
 include(cmake/Summary.cmake)
 caffe2_print_configuration_summary()
+
+add_executable(test_pytorch test.cpp)
+target_include_directories(test_pytorch PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/torch/csrc/api/include/>
+        )
+add_dependencies(test_pytorch c10 torch_cpu torch_global_deps)
+target_link_libraries(test_pytorch c10 torch_cpu torch_global_deps)
+

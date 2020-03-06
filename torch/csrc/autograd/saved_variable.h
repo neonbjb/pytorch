@@ -36,6 +36,19 @@ class TORCH_API SavedVariable {
     grad_fn_.reset();
   }
 
+  // Does a direct copy of data from the given otherData. Does not increment version_history, so this can be used to
+  // plop new data into an existing graph ready for backprop (in fact that is the intent). Asserts if otherData does
+  // not have the exact size and dimensions as the local data_.
+  void copy_data_from(at::Tensor& otherData);
+
+  // Allocate a blob of memory and copy the contents of the state data from this variable to it, then return it.
+  // The caller is responsible for freeing the memory.
+  uint8_t* serialize_to_blob() const;
+
+  // Restore the state of an external saved variable given the blob. Can optionally perform validation. Essentially
+  // the reverse of copy_to_blob().
+  void deserialize_from_blob(uint8_t* blob);
+
  private:
   at::Tensor data_;
 

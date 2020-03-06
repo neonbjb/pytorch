@@ -18,6 +18,22 @@ struct TORCH_API ${op} : public ${superclass} {
   void release_variables() override {
     ${release_variables}
   }
+  bool can_serialize_variables() override {
+    return true;
+  }
+  std::queue<uint8_t*> serialize_variables() override {
+    std::queue<uint8_t*> save_queue;
+    ${serialize_variables}
+    return save_queue;
+  }
+  void deserialize_variables(std::queue<uint8_t*> load_queue) override {
+    ${deserialize_variables}
+  }
+  std::vector<Variable> get_saved_variables() override {
+    std::vector<Variable> variables;
+    ${get_saved_variables}
+    return variables;
+  }
   ${will_release_variables}
   ${saved_variables}
   ${saved_list_sizes}
@@ -125,6 +141,9 @@ def process_function(func):
     env = {}
     saved_variables = []
     release_variables = []
+    serialize_variables = []
+    deserialize_variables = []
+    get_saved_variables = []
     saved_list_sizes = []
     unpack = []
     asserts = []
@@ -146,6 +165,11 @@ def process_function(func):
             release_variables.append('{}_.reset_data();'.format(name))
             release_variables.append('{}_.reset_grad_function();'.format(name))
             ptr = 'shared_from_this()' if is_output else ''
+
+            serialize_variables.append('save_queue.push({}_.serialize_to_blob());'.format(name))
+            deserialize_variables.append('{}_.deserialize_from_blob(load_queue.front()); load_queue.pop();'.format(name))
+            get_saved_variables.append('variables.push_back({}_.unpack({}));'.format(name, ptr))
+
             unpack.append('auto {} = {}_.unpack({});'.format(name, name, ptr))
         elif arg['type'] == 'TensorList':
             saved_variables.append('std::vector<SavedVariable> {}_;'.format(name))
@@ -154,12 +178,36 @@ def process_function(func):
             # Because the SavedVariable owns a tensor and a grad_fn, removing the SavedVariable makes them go away as well.
             release_variables.append('{}_.clear();'.format(name))
             release_variables.append('{}_released_ = true;'.format(name))
+
+            serialize_variables.append('std::for_each({}_.begin(), {}_.end(),'
+                                          ' [&save_queue](SavedVariable &v_){{ save_queue.push(v_.serialize_to_blob()); }});'
+                                          .format(name, name))
+            deserialize_variables.append('std::for_each({}_.begin(), {}_.end(),'
+                                         ' [&load_queue](SavedVariable &v_){{ v_.deserialize_from_blob(load_queue.front());'
+                                         'load_queue.pop(); }});'
+                                            .format(name, name))
+            ptr = 'shared_from_this()' if is_output else ''
+            get_saved_variables.append('std::for_each({}_.begin(), {}_.end(),'
+                                       ' [&variables](SavedVariable &v_){{ variables.push_back(v_.unpack({}));}});'
+                                       .format(name, name, ptr))
+
             unpack.append('auto {} = unpack_list({}_);'.format(name, name))
             asserts.append('TORCH_CHECK(!{}_released_, ERR_BACKWARD_TWICE);'.format(name))
         elif arg['type'] == 'IntArrayRef':
             saved_variables.append('std::vector<int64_t> {};'.format(name))
+
+            serialize_variables.append('std::for_each({}.begin(), {}.end(),'
+                                          ' [&save_queue](int64_t &v_){{ save_queue.push(reinterpret_cast<uint8_t*>(new int64_t(v_))); }});'
+                                          .format(name, name))
+            deserialize_variables.append('std::for_each({}.begin(), {}.end(),'
+                                         ' [&load_queue](int64_t &v_){{ v_ = *(reinterpret_cast<int64_t*>(load_queue.front()));'
+                                         'load_queue.pop(); }});'
+                                            .format(name, name))
         elif arg['type'] == 'int64_t':
             saved_variables.append('{} {} = 0;'.format(arg['type'], name))
+
+            serialize_variables.append('save_queue.push(reinterpret_cast<uint8_t*>(new int64_t({})));'.format(name))
+            deserialize_variables.append('{} = *(reinterpret_cast<int64_t*>(load_queue.front())); load_queue.pop();'.format(name))
         else:
             saved_variables.append('{} {};'.format(arg['type'], name))
 
@@ -169,6 +217,11 @@ def process_function(func):
         save_arg(arg, is_output=True)
     env['saved_variables'] = saved_variables
     env['release_variables'] = release_variables
+
+    env['serialize_variables'] = serialize_variables
+    env['deserialize_variables'] = deserialize_variables
+    env['get_saved_variables'] = get_saved_variables
+
     env['saved_list_sizes'] = saved_list_sizes
     env['asserts'] = asserts
 

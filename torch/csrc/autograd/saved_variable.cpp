@@ -12,6 +12,10 @@
 #include <memory>
 #include <sstream>
 
+#include <iostream>
+
+using namespace std;
+
 namespace torch { namespace autograd {
 
 SavedVariable::SavedVariable(const Variable& variable, bool is_output, bool is_inplace_view) {
@@ -98,6 +102,62 @@ Variable SavedVariable::unpack(std::shared_ptr<Node> saved_for) const {
   impl::set_grad_accumulator(var, grad_accumulator_);
 
   return var;
+}
+
+void SavedVariable::copy_data_from(at::Tensor& otherData) {
+  // Turn off grad so copy_ doesn't throw any errors.
+  bool reqGrad = data_.requires_grad();
+  data_.set_requires_grad(false);
+  data_.copy_(otherData, /* non_blocking=*/ false);
+  data_.set_requires_grad(reqGrad);
+}
+
+uint8_t* SavedVariable::serialize_to_blob() const {
+  if(data_.is_sparse()) {
+    cerr << "serialize_to_blob() - Cannot handle sparse tensors. Likely the graph "
+	 << "will not be properly reconstructed."
+	 << endl;
+        // Return a valid buffer anyways so we don't cause any segfaults.
+    uint8_t* errBuffer = reinterpret_cast<uint8_t*>(malloc(sizeof(size_t)));
+    memset(errBuffer, 0, sizeof(size_t));
+    return errBuffer;
+  }
+
+    // Copy the given tensor into CPU memory so we can directly access its memory
+    // buffers.
+  at::Tensor copied = data_.clone().detach().to(at::device(at::kCPU));
+
+  uint8_t* buffer = reinterpret_cast<uint8_t*>(malloc(copied.nbytes() + sizeof(size_t)));
+    // Pack in the size first, then the bytes.
+  size_t* szEmplacement = reinterpret_cast<size_t*>(buffer);
+  *szEmplacement = copied.nbytes();
+
+  memcpy(&buffer[sizeof(size_t)], copied.data_ptr(), copied.nbytes());
+
+  return buffer;
+}
+
+void SavedVariable::deserialize_from_blob(uint8_t* data) {
+  if(data_.is_sparse()) {
+    // Cannot reconstruct sparse tensors (currently). User should have been
+    // warned when it was serialized.
+    return;
+  }
+
+  size_t* dataSz = reinterpret_cast<size_t*>(data);
+  if(*dataSz != data_.nbytes()) {
+    cerr << "deserialize_from_blob() - Size mismatch. Expected " << *dataSz
+	 << " from the provided buffer, but local tensor has size " << data_.nbytes()
+	 << endl;
+    return;
+  }
+
+  // Allocate a CPU tensor to use for copying purposes.
+  at::Tensor ramTensor = data_.clone().detach().to(at::device(at::kCPU));
+  memcpy(ramTensor.data_ptr(), &data[sizeof(size_t)], ramTensor.nbytes());
+
+  // Copy the contents of the CPU tensor back into the original dest tensor.
+  copy_data_from(ramTensor);
 }
 
 const char* ERR_BACKWARD_TWICE =
