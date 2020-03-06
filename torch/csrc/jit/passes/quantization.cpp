@@ -820,8 +820,10 @@ void InsertObserversHelper::fillPassThroughValueMap(const std::shared_ptr<Graph>
     blocks_to_visit.pop();
     for (Node* n : b->nodes()) {
       auto input_indexes = getGeneralOpTensorInputIndexes(n);
+      GRAPH_DEBUG("input indexes: ", input_indexes.size());
       for (auto i : input_indexes) {
         for (auto* output : n->outputs()) {
+          GRAPH_DEBUG("addding ", output->debugName(), " -> ", n->input(i)->debugName());
           pass_through_value_map_[output].push_back(n->input(i));
         }
       }
@@ -1118,6 +1120,8 @@ std::tuple<OptionalModuleVector, OptionalModuleVector, std::vector<size_t>> Inse
 bool InsertObserversHelper::propagateObservedProperty(
     Value* output, std::unordered_set<Value*>& graph_observed_values) {
   if (pass_through_value_map_.count(output)) {
+    GRAPH_DEBUG("found pass thorugh value:", output->debugName());
+    GRAPH_DUMP("in graph: ", output->owningGraph());
     // since the vector is always non-empty, we will
     // not return the initial value
     bool all_observed = true;
@@ -1125,6 +1129,8 @@ bool InsertObserversHelper::propagateObservedProperty(
       all_observed &= observed_values_.count(v) || graph_observed_values.count(v);
     }
     if (all_observed) {
+      GRAPH_DEBUG("passing observed property to:", output->debugName());
+      GRAPH_DUMP("in graph: ", output->owningGraph());
       // This is to propagate observed property through
       // all ops that doesn't require observation
       graph_observed_values.insert(output);
@@ -2412,15 +2418,19 @@ void DedupModuleUses(script::Module& module) {
 }
 
 script::Module Finalize(script::Module& module) {
+  GRAPH_DEBUG("In Finalize");
   SwapFunctionalLinear(module);
   auto graph = module.get_method("forward").graph();
   Inline(*graph);
+  GRAPH_DUMP("Aftre inline:", graph);
   ReplicateDeQuant(graph);
   SwapDeQuant(graph);
   InsertPrepackUnpack(graph);
   ConstantPropagation(graph);
   QuantFusion(graph);
-  return freeze_module(module);
+  GRAPH_DUMP("Aftre quant fusion:", graph);
+  //return freeze_module(module);
+  return module;
 }
 
 } // namespace jit
