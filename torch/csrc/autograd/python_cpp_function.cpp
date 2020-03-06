@@ -130,6 +130,21 @@ PyObject* THPCppFunction_metadata(THPCppFunction *self, void *_unused)
   return metadata;
 }
 
+PyObject* THPCppFunction_variables(THPCppFunction *self, void *_unused)
+{
+  int num_outputs = self->cdata->get_saved_variables().size();
+  if (num_outputs == 1) {
+    // assume we want to unpack one element tuples for now
+    return THPVariable_Wrap(self->cdata->get_saved_variables()[0]);
+  }
+
+  THPObjectPtr tuple(PyTuple_New(num_outputs));
+  for (int i = 0; i != num_outputs; ++i) {
+    PyTuple_SET_ITEM(tuple.get(), i, THPVariable_Wrap(self->cdata->get_saved_variables()[i]));
+  }
+  return tuple.release();
+}
+
 PyObject* THPCppFunction_requires_grad(THPCppFunction* self, void *unused) {
   Py_RETURN_TRUE;
 }
